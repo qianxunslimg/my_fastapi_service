@@ -9,3 +9,11 @@ services:
       - ./app:/app
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql://user:password@db:3306/database
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    external: true
