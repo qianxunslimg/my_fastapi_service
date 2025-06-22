@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from loguru import logger
 import os
-from db.model_orm import *
-from db.model_schema import *
-from db.db import init
+# from db.model_orm import *
+# from db.model_schema import *
+# from db.db import init
 
 app = FastAPI()
 log_dir = "logs"
@@ -17,24 +17,24 @@ logger.add(
 )
 
 
-@app.on_event("startup")
-async def startup_event():
-    await init()
+# @app.on_event("startup")
+# async def startup_event():
+#     await init()
 
 
 @app.get("/")
 async def root():
-    first_db = await Item.create_with_id()
-    first_db.name = f"name_{first_db.id}"
-    first_db.description = f"description_{first_db.id}"
+    # first_db = await Item.create_with_id()
+    # first_db.name = f"name_{first_db.id}"
+    # first_db.description = f"description_{first_db.id}"
 
-    await first_db.save()
+    # await first_db.save()
     logger.info(f"fuck u")
     return {"Hello": "World"}
 
 
-@app.get("/items", response_model=List[ItemData])
-async def read_items():
-    logger.info("Request to read items.")
-    items = await Item.all()
-    return items
+# @app.get("/items", response_model=List[ItemData])
+# async def read_items():
+#     logger.info("Request to read items.")
+#     items = await Item.all()
+#     return items

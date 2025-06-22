@@ -1,5 +1,4 @@
-FROM atomhub.openatom.cn/amd64/python:3.11.5-slim-bullseye
-
+FROM python:3.8.10
 WORKDIR /app
 
 COPY ./app /app

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: atomhub.openatom.cn/amd64/mysql:5.7.43
+    image: mysql
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: database
