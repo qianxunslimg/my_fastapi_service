@@ -8,3 +8,8 @@ aiomysql
 loguru
 aerich
 bson
+pandas
+numpy
+scipy
+requests
+openpyxl
