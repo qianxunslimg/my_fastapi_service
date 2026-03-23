@@ -1,0 +1,18 @@
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
+fastapi
+uvicorn
+tortoise-orm
+pydantic
+pydantic-settings
+aiomysql
+loguru
+aerich
+tomli
+tomlkit
+bson
+pandas
+numpy
+scipy
+requests
+openpyxl
+cryptography

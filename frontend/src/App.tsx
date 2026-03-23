@@ -1,0 +1,212 @@
+import { Alert, ConfigProvider, theme } from "antd";
+import { useEffect, useState } from "react";
+
+import { NAV_ITEMS, OPS_TABS, SITE_NAME, TOOLKIT_TABS } from "./app/constants";
+import { fetchSiteRuntime, subscribeRequestStatus } from "./api/client";
+import { buildPagePath, parseRoute } from "./app/routes";
+import type { RouteState } from "./app/types";
+import { HomePage } from "./features/home/HomePage";
+import { OpsPage } from "./features/ops/OpsPage";
+import { ToolkitPage } from "./features/toolkit/ToolkitPage";
+import { env } from "./env";
+
+const antdTheme = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    colorPrimary: "#38bdf8",
+    colorInfo: "#38bdf8",
+    colorSuccess: "#22c55e",
+    colorWarning: "#f59e0b",
+    colorError: "#ef4444",
+    colorBgBase: "#0f172a",
+    colorBgContainer: "#1e293b",
+    colorBgElevated: "#111827",
+    colorText: "#e2e8f0",
+    colorTextSecondary: "#94a3b8",
+    colorBorder: "#334155",
+    borderRadius: 10,
+    fontFamily: '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  },
+};
+
+export default function App() {
+  const [route, setRoute] = useState<RouteState>(() => parseRoute(window.location.pathname));
+  const [headerStatus, setHeaderStatus] = useState("");
+  const [headerError, setHeaderError] = useState("");
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const nextRoute = parseRoute(window.location.pathname);
+      if (window.location.pathname !== nextRoute.canonicalPath) {
+        window.history.replaceState({}, "", nextRoute.canonicalPath);
+        setRoute({
+          ...nextRoute,
+          path: nextRoute.canonicalPath,
+        });
+        return;
+      }
+      setRoute(nextRoute);
+    };
+
+    syncRoute();
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeRequestStatus((snapshot) => {
+      setHeaderStatus(snapshot.status);
+      setHeaderError(snapshot.error);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (headerStatus || headerError) {
+      return;
+    }
+    void fetchSiteRuntime().catch(() => undefined);
+  }, [headerError, headerStatus]);
+
+  useEffect(() => {
+    const titleMap = {
+      home: SITE_NAME,
+      toolkit: route.toolkitTab === "banyiping" ? `BYP | ${SITE_NAME}` : `工具 | ${SITE_NAME}`,
+      ops:
+        route.opsTab === "logs"
+          ? `日志 | ${SITE_NAME}`
+          : route.opsTab === "table"
+            ? `数据库 | ${SITE_NAME}`
+            : `控制台 | ${SITE_NAME}`,
+    };
+
+    document.title = titleMap[route.page];
+  }, [route.opsTab, route.page, route.toolkitTab]);
+
+  function handleNavigate(path: string) {
+    const nextRoute = parseRoute(path);
+    const targetPath = nextRoute.canonicalPath;
+
+    if (window.location.pathname === targetPath) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    window.history.pushState({}, "", targetPath);
+    setRoute({
+      ...nextRoute,
+      path: targetPath,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const docsHref = `${env.apiBase.replace(/\/$/, "")}/docs`;
+
+  let pageContent;
+
+  switch (route.page) {
+    case "ops":
+      pageContent = <OpsPage activeTab={route.opsTab} />;
+      break;
+    case "toolkit":
+      pageContent = <ToolkitPage activeTab={route.toolkitTab} />;
+      break;
+    case "home":
+    default:
+      pageContent = <HomePage onNavigate={handleNavigate} />;
+      break;
+  }
+
+  return (
+    <ConfigProvider theme={antdTheme}>
+      <div className="app">
+        <header className="header">
+          <div className="header-title-row">
+            <button
+              type="button"
+              className="console-brand"
+              onClick={() => handleNavigate(buildPagePath("home"))}
+            >
+              <span className="header-logo">QX</span>
+              <h2 className="console-title">{SITE_NAME} Console</h2>
+            </button>
+
+            <div className="badge-row">
+              <a className="badge" href={docsHref} target="_blank" rel="noreferrer">
+                Open API Docs
+              </a>
+              {(headerError || headerStatus) ? (
+                <div className="header-alert">
+                  <Alert
+                    type={headerError ? "error" : headerStatus === "success" ? "success" : "info"}
+                    message={headerError || headerStatus}
+                    showIcon
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </header>
+
+        <div className="app-shell">
+          <aside className="sidebar">
+            {NAV_ITEMS.map((item) => {
+              const isActive = route.page === item.key;
+              const subnavItems =
+                item.key === "toolkit"
+                  ? TOOLKIT_TABS
+                  : item.key === "ops"
+                    ? OPS_TABS
+                    : [];
+
+              return (
+                <div key={item.key} className="sidebar-nav-group">
+                  <button
+                    type="button"
+                    className={`tab nav-tab${isActive ? " active" : ""}`}
+                    onClick={() => {
+                      if (isActive) {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                        return;
+                      }
+                      handleNavigate(item.path);
+                    }}
+                  >
+                    <span className="nav-tab-icon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+
+                  {isActive && subnavItems.length > 0 ? (
+                    <div className="sidebar-inline-subnav">
+                      {subnavItems.map((subItem) => {
+                        const isSubnavActive =
+                          item.key === "toolkit"
+                            ? route.toolkitTab === subItem.key
+                            : route.opsTab === subItem.key;
+
+                        return (
+                          <button
+                            key={subItem.key}
+                            type="button"
+                            className={`sidebar-subnav-btn${isSubnavActive ? " active" : ""}`}
+                            onClick={() => handleNavigate(subItem.path)}
+                          >
+                            {subItem.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </aside>
+
+          <main className="main">
+            {pageContent}
+          </main>
+        </div>
+      </div>
+    </ConfigProvider>
+  );
+}
