@@ -1,2 +1,8 @@
 logs
 *.pyc
+backend/app/.env
+backend/app/site_data/
+frontend/.env
+frontend/node_modules
+frontend/dist
+data_*
