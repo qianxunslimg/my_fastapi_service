@@ -24,6 +24,17 @@ frontend
 └── src/styles.css           # 全局样式和视觉系统
 ```
 
+博客内容已经纳入当前仓库，目录位于：
+
+```text
+backend/app/content/blog
+├── README.md
+└── posts
+    └── YYYY/slug
+        ├── index.md
+        └── assets/
+```
+
 ## 重构原则
 
 - `api` 只保留协议层代码，具体业务逻辑下沉到 `modules`
@@ -69,6 +80,32 @@ docker compose up --build
 - 后端：`http://localhost:9000`
 - 文档：`http://localhost:9000/docs`
 - 前端：`http://localhost:9001`
+
+## 博客写作
+
+旧 Hexo 博客已经导入到 `backend/app/content/blog/posts`，后续新文章也继续放这里。
+
+图片规则统一为：
+
+```md
+![示例图片](./assets/example.png)
+```
+
+也就是每篇文章一个目录，图片和附件都放在当前文章目录的 `assets/` 下。服务端会自动把相对路径解析成站内资源地址。
+
+新建文章可以直接用脚手架：
+
+```bash
+cd backend/app
+python tools/create_blog_post.py --title "我的新文章" --slug my-new-post --category 开发随笔 --tag 记录
+```
+
+如果你之后还想从旧静态博客重新导一次，可以用：
+
+```bash
+cd backend/app
+python tools/import_hexo_blog.py --source /你的旧博客静态站目录 --clean
+```
 
 ## Env 说明
 

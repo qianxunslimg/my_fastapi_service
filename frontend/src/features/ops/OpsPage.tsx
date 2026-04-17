@@ -1,4 +1,8 @@
 import {
+  DownloadOutlined,
+  FileZipOutlined,
+} from "@ant-design/icons";
+import {
   Alert,
   Button,
   Card,
@@ -14,9 +18,11 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
+  downloadOpsLogFile,
+  downloadOpsLogsArchive,
   fetchServiceHealth,
   fetchOpsFeatures,
   fetchOpsLogsList,
@@ -36,9 +42,17 @@ import type {
   ServiceHealthData,
 } from "../../api/types";
 import type { OpsTabKey } from "../../app/types";
+import { env } from "../../env";
 
 const OPS_PAGE_PASSWORD = "1230.123";
 const OPS_SESSION_KEY = "maysafe.ops.password";
+const LOG_LEVEL_OPTIONS = [
+  { label: "全部级别", value: "" },
+  { label: "DEBUG", value: "DEBUG" },
+  { label: "INFO", value: "INFO" },
+  { label: "WARNING", value: "WARNING" },
+  { label: "ERROR", value: "ERROR" },
+];
 
 type OpsPageProps = {
   activeTab: OpsTabKey;
@@ -107,7 +121,37 @@ function getLatestFeatureTime(items: OpsFeatureFlagRecord[]) {
   return new Date(Math.max(...values)).toISOString();
 }
 
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "-";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+  const mb = kb / 1024;
+  if (mb < 1024) {
+    return `${mb.toFixed(1)} MB`;
+  }
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+function saveBlobFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function OpsPage({ activeTab }: OpsPageProps) {
+  const logConsoleRef = useRef<HTMLDivElement | null>(null);
   const [passwordInput, setPasswordInput] = useState(() => initialPassword());
   const [opsPassword, setOpsPassword] = useState(() => initialPassword());
 
@@ -122,6 +166,7 @@ export function OpsPage({ activeTab }: OpsPageProps) {
   const [logFiles, setLogFiles] = useState<OpsLogFileInfo[]>([]);
   const [selectedLog, setSelectedLog] = useState("");
   const [logKeyword, setLogKeyword] = useState("");
+  const [logLevel, setLogLevel] = useState("");
   const [logLines, setLogLines] = useState(200);
   const [logTail, setLogTail] = useState<OpsLogTailData | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -140,8 +185,10 @@ export function OpsPage({ activeTab }: OpsPageProps) {
   const [tableError, setTableError] = useState<string | null>(null);
 
   const unlocked = opsPassword === OPS_PAGE_PASSWORD;
+  const docsHref = `${env.apiBase.replace(/\/$/, "")}/docs`;
   const selectedTableMeta = queryableTables.find((item) => item.name === selectedTable) || null;
   const selectedColumnMeta = selectedTableMeta?.columns.find((item) => item.name === selectedColumn);
+  const selectedLogInfo = logFiles.find((item) => item.name === selectedLog) || null;
 
   async function handleOpsError(error: unknown) {
     const text = error instanceof Error ? error.message : "请求失败";
@@ -177,7 +224,30 @@ export function OpsPage({ activeTab }: OpsPageProps) {
     }
   }
 
-  async function loadLogs(targetFilename?: string) {
+  async function loadLogTail(targetFilename?: string) {
+    const nextSelected = targetFilename || selectedLog;
+    if (!nextSelected) {
+      setLogTail(null);
+      return;
+    }
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const tailResponse = await fetchOpsLogTail(opsPassword, {
+        filename: nextSelected,
+        lines: logLines,
+        keyword: logKeyword || undefined,
+        level: logLevel || undefined,
+      });
+      setLogTail(tailResponse.data ?? null);
+    } catch (error) {
+      setLogsError(await handleOpsError(error));
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  async function loadLogs(targetFilename?: string, tail = true) {
     setLogsLoading(true);
     setLogsError(null);
     try {
@@ -190,16 +260,42 @@ export function OpsPage({ activeTab }: OpsPageProps) {
         setLogTail(null);
         return;
       }
+      if (!tail) {
+        return;
+      }
       const tailResponse = await fetchOpsLogTail(opsPassword, {
         filename: nextSelected,
         lines: logLines,
         keyword: logKeyword || undefined,
+        level: logLevel || undefined,
       });
       setLogTail(tailResponse.data ?? null);
     } catch (error) {
       setLogsError(await handleOpsError(error));
     } finally {
       setLogsLoading(false);
+    }
+  }
+
+  async function handleDownloadSelectedLog() {
+    if (!selectedLog) {
+      message.warning("请先选择日志文件");
+      return;
+    }
+    try {
+      const payload = await downloadOpsLogFile(opsPassword, selectedLog);
+      saveBlobFile(payload.blob, payload.filename);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "日志下载失败");
+    }
+  }
+
+  async function handleDownloadAllLogs() {
+    try {
+      const payload = await downloadOpsLogsArchive(opsPassword);
+      saveBlobFile(payload.blob, payload.filename);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "日志打包下载失败");
     }
   }
 
@@ -329,6 +425,19 @@ export function OpsPage({ activeTab }: OpsPageProps) {
     }
   }, [activeTab, unlocked]);
 
+  useEffect(() => {
+    if (activeTab !== "logs" || !logConsoleRef.current) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      if (!logConsoleRef.current) {
+        return;
+      }
+      logConsoleRef.current.scrollTop = logConsoleRef.current.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, logTail?.lines, logsLoading]);
+
   function handleUnlock() {
     const next = passwordInput.trim();
     if (next !== OPS_PAGE_PASSWORD) {
@@ -350,6 +459,7 @@ export function OpsPage({ activeTab }: OpsPageProps) {
     setHealthError(null);
     setLogFiles([]);
     setSelectedLog("");
+    setLogLevel("");
     setLogTail(null);
     setQueryableTables([]);
     setSelectedTable("");
@@ -451,6 +561,9 @@ export function OpsPage({ activeTab }: OpsPageProps) {
             <h3>控制台概览</h3>
             <p>当前开关数量和最新变更时间。</p>
           </div>
+          <Button href={docsHref} target="_blank" rel="noreferrer">
+            API 文档
+          </Button>
         </div>
         <div className="ops-console-summary-grid">
           <div className="ops-console-summary-item">
@@ -540,9 +653,9 @@ export function OpsPage({ activeTab }: OpsPageProps) {
 
   function renderLogs() {
     return (
-      <div className="section-stack">
+      <div className="section-stack ops-logs-shell">
         {logsError ? <Alert type="error" message={logsError} showIcon /> : null}
-        <Card className="panel-card" bordered={false}>
+        <Card className="panel-card ops-logs-card" bordered={false}>
           <div className="ops-toolbar-row">
             <Select
               className="ops-flex-item"
@@ -552,7 +665,7 @@ export function OpsPage({ activeTab }: OpsPageProps) {
               onChange={(value) => {
                 const next = String(value || "");
                 setSelectedLog(next);
-                void loadLogs(next);
+                void loadLogTail(next);
               }}
             />
             <Input
@@ -560,10 +673,17 @@ export function OpsPage({ activeTab }: OpsPageProps) {
               value={logKeyword}
               placeholder="关键字过滤"
               onChange={(event) => setLogKeyword(event.target.value)}
-              onPressEnter={() => void loadLogs(selectedLog)}
+              onPressEnter={() => void loadLogTail(selectedLog)}
             />
-            <InputNumber min={20} max={2000} value={logLines} onChange={(value) => setLogLines(Number(value || 200))} />
-            <Button onClick={() => void loadLogs(selectedLog)} loading={logsLoading}>刷新</Button>
+            <Select
+              value={logLevel}
+              options={LOG_LEVEL_OPTIONS}
+              onChange={setLogLevel}
+            />
+            <InputNumber min={20} max={5000} value={logLines} onChange={(value) => setLogLines(Number(value || 200))} />
+            <Button type="primary" onClick={() => void loadLogTail(selectedLog)} loading={logsLoading}>
+              查看 Tail
+            </Button>
           </div>
           <div className="log-toolbar">
             <span className="status">
@@ -571,8 +691,29 @@ export function OpsPage({ activeTab }: OpsPageProps) {
                 ? `${logTail.file} · 总行数 ${logTail.total_lines} · 命中 ${logTail.matched_lines}`
                 : "暂无日志内容"}
             </span>
+            {selectedLogInfo ? (
+              <span className="status">
+                {formatFileSize(selectedLogInfo.size)} · {formatTime(selectedLogInfo.modified)}
+              </span>
+            ) : null}
+            <Space>
+              <Button
+                icon={<DownloadOutlined />}
+                disabled={!selectedLog}
+                onClick={() => void handleDownloadSelectedLog()}
+              >
+                下载当前
+              </Button>
+              <Button
+                icon={<FileZipOutlined />}
+                disabled={!logFiles.length}
+                onClick={() => void handleDownloadAllLogs()}
+              >
+                下载全部
+              </Button>
+            </Space>
           </div>
-          <div className="log-console">
+          <div className="log-console" ref={logConsoleRef}>
             {logsLoading ? <Spin /> : <pre>{logTail?.lines?.length ? logTail.lines.join("\n") : "(暂无内容)"}</pre>}
           </div>
         </Card>

@@ -5,6 +5,24 @@ function normalizePath(pathname: string) {
   return trimmed || "/";
 }
 
+function buildBaseRoute(path: string, canonicalPath: string): RouteState {
+  return {
+    page: "home",
+    toolkitTab: "banyiping",
+    opsTab: "features",
+    blogMode: "index",
+    blogTag: null,
+    blogCategory: null,
+    blogPostPath: null,
+    path,
+    canonicalPath,
+  };
+}
+
+function isDateSegment(value?: string) {
+  return !!value && /^\d+$/.test(value);
+}
+
 export function buildToolkitPath(tab: ToolkitTabKey) {
   return "/toolkit/" + tab;
 }
@@ -13,10 +31,28 @@ export function buildOpsPath(tab: OpsTabKey) {
   return "/ops/" + tab;
 }
 
+export function buildBlogPath() {
+  return "/blog";
+}
+
+export function buildBlogTagPath(tag: string) {
+  return `/blog/tags/${encodeURIComponent(tag)}`;
+}
+
+export function buildBlogCategoryPath(category: string) {
+  return `/blog/categories/${encodeURIComponent(category)}`;
+}
+
+export function buildBlogPostPath(postPath: string) {
+  return `/blog/${postPath.replace(/^\/+|\/+$/g, "")}`;
+}
+
 export function buildPagePath(page: PageKey) {
   switch (page) {
     case "home":
       return "/";
+    case "blog":
+      return buildBlogPath();
     case "toolkit":
       return buildToolkitPath("banyiping");
     case "ops":
@@ -28,87 +64,140 @@ export function buildPagePath(page: PageKey) {
 
 export function parseRoute(pathname: string): RouteState {
   const path = normalizePath(pathname);
+  const rawSegments = path.split("/").filter(Boolean);
+
+  if (rawSegments[0] === "blog") {
+    if (rawSegments.length === 1) {
+      return {
+        ...buildBaseRoute(path, buildBlogPath()),
+        page: "blog",
+      };
+    }
+
+    if (rawSegments[1] === "tags" && rawSegments[2]) {
+      const tag = decodeURIComponent(rawSegments.slice(2).join("/"));
+      return {
+        ...buildBaseRoute(path, buildBlogTagPath(tag)),
+        page: "blog",
+        blogMode: "tag",
+        blogTag: tag,
+      };
+    }
+
+    if (rawSegments[1] === "categories" && rawSegments[2]) {
+      const category = decodeURIComponent(rawSegments.slice(2).join("/"));
+      return {
+        ...buildBaseRoute(path, buildBlogCategoryPath(category)),
+        page: "blog",
+        blogMode: "category",
+        blogCategory: category,
+      };
+    }
+
+    if (
+      rawSegments.length === 5 &&
+      isDateSegment(rawSegments[1]) &&
+      isDateSegment(rawSegments[2]) &&
+      isDateSegment(rawSegments[3])
+    ) {
+      const postPath = [
+        rawSegments[1],
+        rawSegments[2],
+        rawSegments[3],
+        decodeURIComponent(rawSegments[4]),
+      ].join("/");
+      return {
+        ...buildBaseRoute(path, buildBlogPostPath(postPath)),
+        page: "blog",
+        blogMode: "post",
+        blogPostPath: postPath,
+      };
+    }
+
+    return {
+      ...buildBaseRoute(path, buildBlogPath()),
+      page: "blog",
+    };
+  }
+
+  if (
+    rawSegments.length === 4 &&
+    isDateSegment(rawSegments[0]) &&
+    isDateSegment(rawSegments[1]) &&
+    isDateSegment(rawSegments[2])
+  ) {
+    const postPath = [
+      rawSegments[0],
+      rawSegments[1],
+      rawSegments[2],
+      decodeURIComponent(rawSegments[3]),
+    ].join("/");
+    return {
+      ...buildBaseRoute(path, buildBlogPostPath(postPath)),
+      page: "blog",
+      blogMode: "post",
+      blogPostPath: postPath,
+    };
+  }
 
   switch (path) {
     case "/":
       return {
+        ...buildBaseRoute(path, "/"),
         page: "home",
-        toolkitTab: "banyiping",
-        opsTab: "features",
-        path,
-        canonicalPath: "/",
       };
     case "/toolkit":
       return {
+        ...buildBaseRoute(path, buildToolkitPath("banyiping")),
         page: "toolkit",
         toolkitTab: "banyiping",
-        opsTab: "features",
-        path,
-        canonicalPath: buildToolkitPath("banyiping"),
       };
     case "/toolkit/banyiping":
       return {
+        ...buildBaseRoute(path, buildToolkitPath("banyiping")),
         page: "toolkit",
         toolkitTab: "banyiping",
-        opsTab: "features",
-        path,
-        canonicalPath: buildToolkitPath("banyiping"),
       };
     case "/toolkit/health":
       return {
+        ...buildBaseRoute(path, buildOpsPath("features")),
         page: "ops",
-        toolkitTab: "banyiping",
         opsTab: "features",
-        path,
-        canonicalPath: buildOpsPath("features"),
       };
     case "/toolkit/intake":
       return {
+        ...buildBaseRoute(path, buildToolkitPath("banyiping")),
         page: "toolkit",
         toolkitTab: "banyiping",
-        opsTab: "features",
-        path,
-        canonicalPath: buildToolkitPath("banyiping"),
       };
     case "/ops":
       return {
+        ...buildBaseRoute(path, buildOpsPath("features")),
         page: "ops",
-        toolkitTab: "banyiping",
         opsTab: "features",
-        path,
-        canonicalPath: buildOpsPath("features"),
       };
     case "/ops/features":
       return {
+        ...buildBaseRoute(path, buildOpsPath("features")),
         page: "ops",
-        toolkitTab: "banyiping",
         opsTab: "features",
-        path,
-        canonicalPath: buildOpsPath("features"),
       };
     case "/ops/logs":
       return {
+        ...buildBaseRoute(path, buildOpsPath("logs")),
         page: "ops",
-        toolkitTab: "banyiping",
         opsTab: "logs",
-        path,
-        canonicalPath: buildOpsPath("logs"),
       };
     case "/ops/table":
       return {
+        ...buildBaseRoute(path, buildOpsPath("table")),
         page: "ops",
-        toolkitTab: "banyiping",
         opsTab: "table",
-        path,
-        canonicalPath: buildOpsPath("table"),
       };
     default:
       return {
+        ...buildBaseRoute(path, "/"),
         page: "home",
-        toolkitTab: "banyiping",
-        opsTab: "features",
-        path,
-        canonicalPath: "/",
       };
   }
 }

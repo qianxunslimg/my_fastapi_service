@@ -1,5 +1,7 @@
 from .service import (
+    build_logs_archive,
     build_ops_overview,
+    copy_log_file_to_temp,
     get_all_feature_flags,
     get_public_feature_flags,
     get_site_runtime_payload,
@@ -10,7 +12,9 @@ from .service import (
 )
 
 __all__ = [
+    "build_logs_archive",
     "build_ops_overview",
+    "copy_log_file_to_temp",
     "get_all_feature_flags",
     "get_public_feature_flags",
     "get_site_runtime_payload",

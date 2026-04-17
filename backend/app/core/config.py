@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     LOG_DIR: str = Field(default=str(APP_DIR / "site_data" / "logs"))
     OPS_DATA_DIR: str = Field(default=str(APP_DIR / "site_data" / "ops"))
     FORM_DATA_DIR: str = Field(default=str(APP_DIR / "site_data" / "forms"))
+    BLOG_CONTENT_DIR: str = Field(default=str(APP_DIR / "content" / "blog" / "posts"))
 
     DOCS_URL: str = Field(default="/docs")
     OPENAPI_URL: str = Field(default="/openapi.json")
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
         Path(self.LOG_DIR).mkdir(parents=True, exist_ok=True)
         Path(self.OPS_DATA_DIR).mkdir(parents=True, exist_ok=True)
         Path(self.FORM_DATA_DIR).mkdir(parents=True, exist_ok=True)
+        Path(self.BLOG_CONTENT_DIR).mkdir(parents=True, exist_ok=True)
 
     def get_cors_origins(self):
         origins = [item.strip() for item in self.CORS_ALLOW_ORIGINS.split(",") if item.strip()]

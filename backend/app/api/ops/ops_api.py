@@ -4,7 +4,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Type
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import FileResponse
 from tortoise import fields as tortoise_fields
 from tortoise.expressions import Q
 from tortoise.models import Model
@@ -13,7 +14,9 @@ from common.schemas import CommonResponse
 from core.config import settings
 from db.model_orm import Item
 from modules.site_ops import (
+    build_logs_archive,
     build_ops_overview,
+    copy_log_file_to_temp,
     get_all_feature_flags,
     is_feature_enabled,
     list_log_files,
@@ -308,17 +311,51 @@ async def get_log_files():
 @router.get("/logs/tail", response_model=GetOpsLogTailResponse, summary="查看日志末尾内容")
 async def get_log_tail(
     filename: str = Query(..., description="日志文件名"),
-    lines: int = Query(default=200, ge=20, le=2000, description="返回最近多少行"),
+    lines: int = Query(default=200, ge=20, le=5000, description="返回最近多少行"),
     keyword: Optional[str] = Query(default=None, description="关键字过滤"),
+    level: Optional[str] = Query(default=None, description="日志级别过滤，例如 INFO/ERROR"),
 ):
     _require_feature_enabled("ops_logs", "日志查看功能当前已关闭")
     try:
-        payload = tail_log_file(filename=filename, lines=lines, keyword=keyword)
+        payload = tail_log_file(filename=filename, lines=lines, keyword=keyword, level=level)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"日志文件不存在: {exc}") from exc
     return CommonResponse(data=LogTailData(**payload))
+
+
+@router.get("/logs/download", summary="下载指定日志文件")
+async def download_log_file(
+    background_tasks: BackgroundTasks,
+    filename: str = Query(..., description="日志文件名"),
+):
+    _require_feature_enabled("ops_logs", "日志查看功能当前已关闭")
+    try:
+        temp_path, download_name = copy_log_file_to_temp(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"日志文件不存在: {exc}") from exc
+    background_tasks.add_task(temp_path.unlink, missing_ok=True)
+    return FileResponse(
+        temp_path,
+        filename=download_name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.get("/logs/archive", summary="打包下载全部日志")
+async def download_logs_archive(background_tasks: BackgroundTasks):
+    _require_feature_enabled("ops_logs", "日志查看功能当前已关闭")
+    archive_path = build_logs_archive()
+    background_tasks.add_task(archive_path.unlink, missing_ok=True)
+    filename = f"site_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return FileResponse(
+        archive_path,
+        filename=filename,
+        media_type="application/zip",
+    )
 
 
 @router.get("/db/tables", response_model=GetQueryableTablesApiResponse, summary="列出可查询数据表")

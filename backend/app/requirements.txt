@@ -16,3 +16,6 @@ scipy
 requests
 openpyxl
 cryptography
+PyYAML
+beautifulsoup4
+mistune

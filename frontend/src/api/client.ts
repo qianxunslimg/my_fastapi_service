@@ -1,5 +1,7 @@
 import { env } from "../env";
 import type {
+  BlogIndexData,
+  BlogPostDetail,
   BypAnalysisData,
   CommonResponse,
   OpsFeatureFlagListData,
@@ -27,6 +29,10 @@ type RequestStatusSnapshot = {
 };
 
 type RequestStatusListener = (snapshot: RequestStatusSnapshot) => void;
+export type BlobDownload = {
+  blob: Blob;
+  filename: string;
+};
 
 const requestStatusListeners = new Set<RequestStatusListener>();
 let requestStatusSnapshot: RequestStatusSnapshot = {
@@ -67,6 +73,19 @@ function buildQuery(params: Record<string, string | number | undefined | null>) 
   });
   const text = query.toString();
   return text ? `?${text}` : "";
+}
+
+function extractDownloadFilename(response: Response, fallback: string) {
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1]);
+  }
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1];
+  }
+  return fallback;
 }
 
 function extractErrorMessage(response: Response, rawText: string) {
@@ -112,6 +131,25 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
+async function requestBlob(path: string, init?: RequestInit, fallbackFilename = "download") {
+  let response: Response;
+  try {
+    response = await fetch(`${env.apiBase}${path}`, init);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "请求失败";
+    publishRequestStatus({ status: "", error: message });
+    throw new Error(message);
+  }
+  if (!response.ok) {
+    await throwRequestError(response);
+  }
+  publishRequestStatus({ status: "success", error: "" });
+  return {
+    blob: await response.blob(),
+    filename: extractDownloadFilename(response, fallbackFilename),
+  };
+}
+
 async function getJson<T>(path: string, headers?: HeadersInit): Promise<T> {
   return requestJson<T>(path, {
     method: "GET",
@@ -146,6 +184,23 @@ export function subscribeRequestStatus(listener: RequestStatusListener) {
 
 export async function fetchSiteRuntime() {
   return getJson<CommonResponse<SiteRuntimeData>>(`${API_PREFIX}/site/runtime`);
+}
+
+export async function fetchBlogIndex() {
+  return getJson<CommonResponse<BlogIndexData>>(`${API_PREFIX}/blog/index`);
+}
+
+export async function fetchBlogPost(
+  year: string,
+  month: string,
+  day: string,
+  postId: string,
+  password = ""
+) {
+  const query = password ? buildQuery({ password }) : "";
+  return getJson<CommonResponse<BlogPostDetail>>(
+    `${API_PREFIX}/blog/posts/${year}/${month}/${day}/${encodeURIComponent(postId)}${query}`
+  );
 }
 
 export async function fetchServiceHealth() {
@@ -184,10 +239,34 @@ export async function fetchOpsLogTail(
     filename: string;
     lines?: number;
     keyword?: string;
+    level?: string;
   }
 ) {
   const query = buildQuery(params);
   return getJson<CommonResponse<OpsLogTailData>>(`${API_PREFIX}/ops/logs/tail${query}`, buildOpsHeaders(password));
+}
+
+export async function downloadOpsLogFile(password: string, filename: string): Promise<BlobDownload> {
+  const query = buildQuery({ filename });
+  return requestBlob(
+    `${API_PREFIX}/ops/logs/download${query}`,
+    {
+      method: "GET",
+      headers: buildOpsHeaders(password),
+    },
+    filename
+  );
+}
+
+export async function downloadOpsLogsArchive(password: string): Promise<BlobDownload> {
+  return requestBlob(
+    `${API_PREFIX}/ops/logs/archive`,
+    {
+      method: "GET",
+      headers: buildOpsHeaders(password),
+    },
+    "site_logs.zip"
+  );
 }
 
 export async function fetchOpsQueryableTables(password: string) {

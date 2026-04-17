@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
+import zipfile
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +23,14 @@ DEFAULT_FEATURE_FLAGS = [
         "key": "site_overview_cards",
         "label": "首页导航卡片",
         "description": "首页展示最近能力和快捷入口。",
+        "group": "site",
+        "enabled": True,
+        "public": True,
+    },
+    {
+        "key": "site_blog",
+        "label": "博客",
+        "description": "个人博客内容和文章详情页。",
         "group": "site",
         "enabled": True,
         "public": True,
@@ -191,18 +202,27 @@ def list_log_files() -> list[dict[str, Any]]:
     return files
 
 
-def tail_log_file(filename: str, lines: int = 200, keyword: Optional[str] = None) -> dict[str, Any]:
+def tail_log_file(
+    filename: str,
+    lines: int = 200,
+    keyword: Optional[str] = None,
+    level: Optional[str] = None,
+) -> dict[str, Any]:
     path = _safe_log_path(filename)
     filtered_lines: deque[str] = deque(maxlen=lines)
     total_lines = 0
     matched_lines = 0
     keyword_text = (keyword or "").strip().lower()
+    level_text = (level or "").strip().upper()
 
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         for raw in handle:
             total_lines += 1
             line = raw.rstrip("\n")
-            if keyword_text and keyword_text not in line.lower():
+            normalized_line = line.lower()
+            if keyword_text and keyword_text not in normalized_line:
+                continue
+            if level_text and level_text not in line.upper():
                 continue
             matched_lines += 1
             filtered_lines.append(line)
@@ -213,6 +233,36 @@ def tail_log_file(filename: str, lines: int = 200, keyword: Optional[str] = None
         "total_lines": total_lines,
         "matched_lines": matched_lines,
     }
+
+
+def resolve_log_file(filename: str) -> Path:
+    return _safe_log_path(filename)
+
+
+def build_logs_archive(archive_prefix: str = "site_logs_") -> Path:
+    log_dir = _ensure_log_dir()
+    temp_file = tempfile.NamedTemporaryFile(prefix=archive_prefix, suffix=".zip", delete=False)
+    archive_path = Path(temp_file.name)
+    temp_file.close()
+
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(log_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(log_dir))
+    return archive_path
+
+
+def copy_log_file_to_temp(filename: str, temp_prefix: str = "site_log_") -> tuple[Path, str]:
+    path = _safe_log_path(filename)
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix=temp_prefix,
+        suffix=path.suffix or ".log",
+        delete=False,
+    )
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    shutil.copyfile(path, temp_path)
+    return temp_path, path.name
 
 
 async def build_ops_overview() -> dict[str, Any]:

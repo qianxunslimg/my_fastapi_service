@@ -1,14 +1,13 @@
-import { Alert, ConfigProvider, theme } from "antd";
+import { ConfigProvider, theme } from "antd";
 import { useEffect, useState } from "react";
 
 import { NAV_ITEMS, OPS_TABS, SITE_NAME, TOOLKIT_TABS } from "./app/constants";
-import { fetchSiteRuntime, subscribeRequestStatus } from "./api/client";
 import { buildPagePath, parseRoute } from "./app/routes";
 import type { RouteState } from "./app/types";
+import { BlogPage } from "./features/blog/BlogPage";
 import { HomePage } from "./features/home/HomePage";
 import { OpsPage } from "./features/ops/OpsPage";
 import { ToolkitPage } from "./features/toolkit/ToolkitPage";
-import { env } from "./env";
 
 const antdTheme = {
   algorithm: theme.darkAlgorithm,
@@ -31,8 +30,6 @@ const antdTheme = {
 
 export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseRoute(window.location.pathname));
-  const [headerStatus, setHeaderStatus] = useState("");
-  const [headerError, setHeaderError] = useState("");
 
   useEffect(() => {
     const syncRoute = () => {
@@ -54,23 +51,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeRequestStatus((snapshot) => {
-      setHeaderStatus(snapshot.status);
-      setHeaderError(snapshot.error);
-    });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (headerStatus || headerError) {
-      return;
-    }
-    void fetchSiteRuntime().catch(() => undefined);
-  }, [headerError, headerStatus]);
-
-  useEffect(() => {
     const titleMap = {
       home: SITE_NAME,
+      blog: `博客 | ${SITE_NAME}`,
       toolkit: route.toolkitTab === "banyiping" ? `BYP | ${SITE_NAME}` : `工具 | ${SITE_NAME}`,
       ops:
         route.opsTab === "logs"
@@ -100,13 +83,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const docsHref = `${env.apiBase.replace(/\/$/, "")}/docs`;
+  const consoleTitle = route.page === "blog" ? `${SITE_NAME} Journal` : `${SITE_NAME} Console`;
 
   let pageContent;
 
   switch (route.page) {
     case "ops":
       pageContent = <OpsPage activeTab={route.opsTab} />;
+      break;
+    case "blog":
+      pageContent = <BlogPage route={route} onNavigate={handleNavigate} />;
       break;
     case "toolkit":
       pageContent = <ToolkitPage activeTab={route.toolkitTab} />;
@@ -128,23 +114,8 @@ export default function App() {
               onClick={() => handleNavigate(buildPagePath("home"))}
             >
               <span className="header-logo">QX</span>
-              <h2 className="console-title">{SITE_NAME} Console</h2>
+              <h2 className="console-title">{consoleTitle}</h2>
             </button>
-
-            <div className="badge-row">
-              <a className="badge" href={docsHref} target="_blank" rel="noreferrer">
-                Open API Docs
-              </a>
-              {(headerError || headerStatus) ? (
-                <div className="header-alert">
-                  <Alert
-                    type={headerError ? "error" : headerStatus === "success" ? "success" : "info"}
-                    message={headerError || headerStatus}
-                    showIcon
-                  />
-                </div>
-              ) : null}
-            </div>
           </div>
         </header>
 
@@ -165,7 +136,7 @@ export default function App() {
                     type="button"
                     className={`tab nav-tab${isActive ? " active" : ""}`}
                     onClick={() => {
-                      if (isActive) {
+                      if (isActive && item.key !== "blog") {
                         window.scrollTo({ top: 0, behavior: "smooth" });
                         return;
                       }
