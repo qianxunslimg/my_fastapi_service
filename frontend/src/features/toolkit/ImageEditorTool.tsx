@@ -116,6 +116,7 @@ export function ImageEditorTool() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const autoGenerateSeq = useRef(0);
+  const lockedRatioRef = useRef(1);
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [detailPreview, setDetailPreview] = useState<DetailPreview>({
@@ -128,8 +129,8 @@ export function ImageEditorTool() {
   const [processing, setProcessing] = useState(false);
   const [exportStale, setExportStale] = useState(false);
   const [exportNotice, setExportNotice] = useState("");
-  const [outputWidth, setOutputWidth] = useState(800);
-  const [outputHeight, setOutputHeight] = useState(800);
+  const [outputWidth, setOutputWidth] = useState<number | null>(800);
+  const [outputHeight, setOutputHeight] = useState<number | null>(800);
   const [lockRatio, setLockRatio] = useState(true);
   const [fitMode, setFitMode] = useState<FitMode>("contain");
   const [format, setFormat] = useState<OutputFormat>("image/jpeg");
@@ -179,21 +180,29 @@ export function ImageEditorTool() {
   }
 
   function updateWidth(value: number | null) {
+    if (value === null) {
+      setOutputWidth(null);
+      markDirty();
+      return;
+    }
     const nextWidth = clampDimension(value);
     setOutputWidth(nextWidth);
     if (lockRatio) {
-      const ratio = outputWidth / outputHeight || 1;
-      setOutputHeight(clampDimension(nextWidth / ratio));
+      setOutputHeight(clampDimension(nextWidth / lockedRatioRef.current));
     }
     markDirty();
   }
 
   function updateHeight(value: number | null) {
+    if (value === null) {
+      setOutputHeight(null);
+      markDirty();
+      return;
+    }
     const nextHeight = clampDimension(value);
     setOutputHeight(nextHeight);
     if (lockRatio) {
-      const ratio = outputWidth / outputHeight || 1;
-      setOutputWidth(clampDimension(nextHeight * ratio));
+      setOutputWidth(clampDimension(nextHeight * lockedRatioRef.current));
     }
     markDirty();
   }
@@ -202,14 +211,19 @@ export function ImageEditorTool() {
     if (!imageInfo) {
       return;
     }
-    if (width === 0 || height === 0) {
-      setOutputWidth(imageInfo.width);
-      setOutputHeight(imageInfo.height);
-    } else {
-      setOutputWidth(width);
-      setOutputHeight(height);
-    }
+    const nextWidth = width === 0 || height === 0 ? imageInfo.width : width;
+    const nextHeight = width === 0 || height === 0 ? imageInfo.height : height;
+    lockedRatioRef.current = nextWidth / nextHeight || 1;
+    setOutputWidth(nextWidth);
+    setOutputHeight(nextHeight);
     markDirty();
+  }
+
+  function updateLockRatio(checked: boolean) {
+    if (checked && outputWidth !== null && outputHeight !== null) {
+      lockedRatioRef.current = outputWidth / outputHeight || 1;
+    }
+    setLockRatio(checked);
   }
 
   function loadImageFile(file: File) {
@@ -222,6 +236,7 @@ export function ImageEditorTool() {
     const image = new Image();
     image.onload = () => {
       imageRef.current = image;
+      lockedRatioRef.current = image.naturalWidth / image.naturalHeight || 1;
       setImageInfo({
         fileName: file.name,
         fileSize: file.size,
@@ -381,6 +396,9 @@ export function ImageEditorTool() {
   }
 
   async function renderBlob(nextQuality: number) {
+    if (outputWidth === null || outputHeight === null) {
+      throw new Error("请输入完整的图片尺寸");
+    }
     const canvas = document.createElement("canvas");
     drawEditedImage(canvas, outputWidth, outputHeight);
 
@@ -388,9 +406,12 @@ export function ImageEditorTool() {
   }
 
   async function generateExport(sequence: number) {
-    if (!imageInfo) {
+    if (!imageInfo || outputWidth === null || outputHeight === null) {
       return;
     }
+
+    const targetWidth = outputWidth;
+    const targetHeight = outputHeight;
 
     try {
       const requestedQuality = Math.min(Math.max(quality / 100, 0.15), 0.95);
@@ -410,8 +431,8 @@ export function ImageEditorTool() {
           blob: nextBlob,
           url: nextUrl,
           fileName: buildOutputName(imageInfo.fileName, format),
-          width: outputWidth,
-          height: outputHeight,
+          width: targetWidth,
+          height: targetHeight,
           format,
           quality: usedQuality,
         };
@@ -430,7 +451,7 @@ export function ImageEditorTool() {
   }
 
   useEffect(() => {
-    if (!imageInfo || !imageRef.current) {
+    if (!imageInfo || !imageRef.current || outputWidth === null || outputHeight === null) {
       return undefined;
     }
 
@@ -559,10 +580,12 @@ export function ImageEditorTool() {
             <div>
               <span>导出尺寸</span>
               <strong>
-                {`${outputWidth} x ${outputHeight}`}
+                {outputWidth === null || outputHeight === null ? "-" : `${outputWidth} x ${outputHeight}`}
               </strong>
               <small>
-                {processing
+                {outputWidth === null || outputHeight === null
+                  ? "请输入完整尺寸"
+                  : processing
                   ? "更新中"
                   : exportResult
                     ? "已自动生成"
@@ -596,7 +619,7 @@ export function ImageEditorTool() {
                 <InputNumber min={1} max={8000} value={outputHeight} onChange={updateHeight} />
               </label>
             </div>
-            <Checkbox checked={lockRatio} onChange={(event) => setLockRatio(event.target.checked)}>
+            <Checkbox checked={lockRatio} onChange={(event) => updateLockRatio(event.target.checked)}>
               锁定当前比例
             </Checkbox>
             <div className="image-editor-presets">
